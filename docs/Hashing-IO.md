@@ -74,15 +74,21 @@ On a warm **2 GiB** / 1 MiB-piece host sample after multi-buffer batching, I
 
 ## SHA-1 throughput
 
-On a warm **200 MiB** buffered run (no io_uring), median scaling from `-t 1` to `-t $(nproc)` was about **1.4×**. OpenSSL builds already outpace the bundled `sha1.c` (about **2×** on the same host). Optional ISA-L multi-buffer is available via `--sha1=isal` but did not meet the ≥15 % keep rule on the measured hosts.
+Rough numbers from warm buffered runs on one laptop (OpenSSL, no io_uring):
+
+| Setup | Result |
+|-------|--------|
+| 200 MiB, `-t 1` → `-t $(nproc)` | ~**1.4×** |
+| OpenSSL vs bundled `sha1.c` | ~**2×** |
+| `--sha1=isal` vs OpenSSL | below the **≥15 %** bar used for `auto` |
 
 ### Versus Rudde/mktorrent 1.1
 
-Same protocol as above (warm **2 GiB**, `-l 20`, OpenSSL piece hashing). After dropping the mmap+memcpy default and aligning the OpenSSL worker/queue with the upstream shape, a laptop sample (5 medians) was about **tied at `-t 1`** and about **+10 % at `-t $(nproc)`** versus a stock Rudde 1.1 build (`USE_OPENSSL` + pthreads). Re-check on your CPU if you care about the margin.
+Warm **2 GiB**, `-l 20`, OpenSSL: about even at `-t 1`, roughly **+10 %** at `-t $(nproc)` after matching the upstream read/queue shape (no mmap+memcpy).
 
 ### Zero-copy mmap (`-t > 1`)
 
-Versus the post-Rudde `read()`-into-piece tip on the same laptop protocol (median of 7): about **−4 % at `-t 1`** (still on the read path; within noise) and about **+40 % at `-t 8`**. Always-on mmap views for `-t 1` were slower (~−12 %), so zero-copy stays multi-thread-only. On a 2-vCPU host with a warm **512 MiB** sample, `-t 2` was about **+5 %** (memory-constrained; not the laptop multi-thread margin).
+Same host, vs that `read()` path: about **+40 %** at `-t 8`. At `-t 1` the mmap view path was slower (~−12 %), so it stays off unless `-t > 1`. On a RAM-tight 2-vCPU box (512 MiB warm), `-t 2` only gained ~**5 %**.
 
 ## Many small files
 
