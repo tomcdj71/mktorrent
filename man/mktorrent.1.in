@@ -1,0 +1,165 @@
+.TH MKTORRENT 1 "November 2026" "MKTorrent @PROJECT_VERSION@" "User Commands"
+.SH NAME
+mktorrent \- create BitTorrent metainfo files
+.SH SYNOPSIS
+.B mktorrent
+[\fIOPTIONS\fR] \fIFILE\fR|\fIDIRECTORY\fR...
+.SH DESCRIPTION
+.B mktorrent
+is a simple command-line utility to create BitTorrent metainfo files.
+It supports both single file and directory torrents, with configurable piece
+length and multiple announce URLs. Announce URLs are optional (DHT-only torrents).
+Linux only.
+.SH OPTIONS
+.TP
+\fB\-a\fR, \fB\-\-announce\fR=\fIURL\fR
+Add an announce URL. Can be used multiple times. Optional; omit for DHT-only torrents.
+.TP
+\fB\-c\fR, \fB\-\-comment\fR=\fICOMMENT\fR
+Add a comment to the metainfo (max 65536 bytes; no control characters).
+.TP
+\fB\-d\fR, \fB\-\-no\-date\fR
+Don't write the creation date.
+.TP
+\fB\-D\fR, \fB\-\-no\-created\-by\fR
+Don't write the created-by field.
+.TP
+\fB\-e\fR, \fB\-\-exclude\fR=\fIPATTERN\fR
+Exclude files whose basename or relative path matches the shell pattern
+(see \fBglob\fR(7)). Can be used multiple times. Wins over \fB\-\-include\fR.
+At most 256 patterns, each ≤ 1024 bytes. Example: \fBsubdir/*.tmp\fR.
+.TP
+\fB\-\-include\fR=\fIPATTERN\fR
+Only include regular files whose basename or relative path matches the shell
+pattern. Directories are still walked so nested matches work. Same pattern
+caps as \fB\-\-exclude\fR. Can be used multiple times.
+.TP
+\fB\-\-skip\-hidden\fR
+Skip any basename starting with \fB.\fR (files and directories). Default is to
+include hidden names other than \fB.\fR and \fB..\fR.
+.TP
+\fB\-f\fR, \fB\-\-force\fR
+Overwrite the output file if it already exists (truncated).
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Show help message and exit.
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Show version information and exit.
+.TP
+\fB\-l\fR, \fB\-\-piece\-length\fR=\fIN\fR
+Piece length as an exponent 15–28 (\fB2^N\fR bytes), or as a byte size with
+optional \fBK\fR/\fBM\fR/\fBG\fR suffix (1024-based). Byte forms must be a power
+of two in [32 KiB, 256 MiB]. Examples: \fB\-l 20\fR, \fB\-l 1M\fR, \fB\-l 1048576\fR.
+Default is chosen automatically from the total size.
+.TP
+\fB\-n\fR, \fB\-\-name\fR=\fINAME\fR
+Set the name of the torrent. Default is basename of FILE or DIRECTORY.
+Required when multiple targets, \fB\-\-from\-file\fR, or \fB\-\-stdin\fR are used.
+.TP
+\fB\-o\fR, \fB\-\-output\fR=\fIFILE\fR
+Set the path of the created .torrent file.
+.TP
+\fB\-p\fR, \fB\-\-private\fR
+Set the private flag.
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress progress and success messages (errors still go to stderr).
+.TP
+\fB\-s\fR, \fB\-\-source\fR=\fISOURCE\fR
+Set the source string.
+.TP
+\fB\-t\fR, \fB\-\-threads\fR=\fINUM\fR
+Set the number of threads to use for hashing (default: number of CPU cores, max 64).
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Be verbose.
+.TP
+\fB\-j\fR, \fB\-J\fR, \fB\-\-json\fR
+After a successful create, print a single JSON object on stdout
+(fields: ok, path, name, length, pieceLength, pieces, private, infoHash,
+announce, nodes). Suppresses other stdout noise.
+.TP
+\fB\-w\fR, \fB\-\-web\-seed\fR=\fIURL\fR
+Add a web seed URL. Can be used multiple times.
+.TP
+\fB\-x\fR, \fB\-\-cross\-seed\fR
+Ensure the info hash is unique for easier cross-seeding.
+.TP
+\fB\-\-from\-file\fR=\fIFILE\fR
+Read target paths from FILE (one path per line; blank lines and lines starting with # are ignored).
+Requires \fB\-n\fR / \fB\-\-name\fR. With \fB\-0\fR / \fB\-\-null\fR, paths are NUL-separated and # comments are not special.
+Overlong lines without a newline are rejected.
+.TP
+\fB\-\-stdin\fR
+Read target paths from standard input (same rules as \fB\-\-from\-file\fR).
+Requires \fB\-n\fR / \fB\-\-name\fR. May be combined with positional targets.
+.TP
+\fB\-0\fR, \fB\-\-null\fR
+NUL-separate paths for \fB\-\-from\-file\fR and \fB\-\-stdin\fR.
+.TP
+\fB\-\-no\-follow\-symlinks\fR
+Do not follow symbolic links; skip them with a warning.
+.TP
+\fB\-\-max\-files\fR=\fIN\fR
+Refuse after N files are queued (default 1000000).
+.TP
+\fB\-\-max\-bytes\fR=\fIN\fR
+Refuse if aggregate size exceeds N bytes (0 = unlimited).
+.TP
+\fB\-\-node\fR=\fIHOST:PORT\fR
+Add a DHT bootstrap node (BEP 5 \fBnodes\fR list). Repeatable.
+.TP
+\fB\-\-direct\-io\fR
+Use O_DIRECT for large files when supported (opt-in; default is buffered I/O).
+.TP
+\fB\-\-io\-uring\fR
+Use io_uring for piece reads (Linux build with liburing; never the default).
+.TP
+\fB\-\-io\-uring\-depth\fR=\fIN\fR
+io_uring queue depth (1–256, default 32). Requires \fB\-\-io\-uring\fR.
+.TP
+\fB\-\-io\-uring\-sqpoll\fR
+Experimental \fBIORING_SETUP_SQPOLL\fR. Requires \fB\-\-io\-uring\fR; setup failure is fatal.
+.TP
+\fB\-\-sha1\fR=\fIauto\fR|\fIopenssl\fR|\fIisal\fR
+Select the piece SHA-1 implementation (pthread builds). Default \fBauto\fR uses OpenSSL when
+linked, otherwise the bundled SHA-1. \fBisal\fR requires a build with ISA-L Crypto and selects
+batched multi-buffer piece hashing (hash workers capped at 1–2). \fBopenssl\fR selects OpenSSL
+or the bundled implementation when OpenSSL was not linked. \fB\-V\fR prints the active backend.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Usage or argument error.
+.TP
+.B 2
+I/O, hashing, or write failure.
+.TP
+.B 130
+Interrupted by SIGINT.
+.SH EXAMPLES
+.TP
+Create a torrent for a single file:
+.B mktorrent \-a http://tracker.example.com/announce \-o file.torrent file.iso
+.TP
+Create a torrent for a directory:
+.B mktorrent \-a http://tracker.example.com/announce \-o dir.torrent directory/
+.TP
+Create a private torrent with 1 MiB pieces:
+.B mktorrent \-a http://tracker.example.com/announce \-p \-l 1M \-o private.torrent file.iso
+.TP
+Create a DHT-only torrent with a bootstrap node and emit JSON:
+.B mktorrent \-\-json \-\-node 127.0.0.1:6881 \-o out.torrent file.iso
+.SH SEE ALSO
+.BR bittorrent (7),
+.BR transmission\-cli (1)
+.SH AUTHOR
+Written by Thomas Chauveau <contact.tomc@yahoo.fr>
+.SH COPYRIGHT
+Copyright \(co 2024 Thomas Chauveau
+.br
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
