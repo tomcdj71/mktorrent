@@ -94,8 +94,22 @@ Tests can be configured with environment variables:
 
 | Variable | Description |
 |----------|-------------|
-| `PERFORMANCE_TESTS=1` | Enable performance tests |
-| `PERFORMANCE_LARGE_TESTS=1` | Enable large file tests (200MB+) |
+| `PERFORMANCE_TESTS=1` | Enable performance suite (`test_performance.sh` → `bench_hash.sh`) |
+| `PERFORMANCE_LARGE_TESTS=1` | Include 200MB fixture in benches |
+| `BENCH_DROP_CACHES=1` | Drop page cache before each cold run (`/proc/sys/vm/drop_caches`; needs root or `sudo -n`) |
+| `BENCH_IOURING_KNOBS=1` | Also bench `iouring-d8` / `d32` / `d64` / `iouring-sqpoll` when liburing is available |
+| `BENCH_JSONL` | Override path for JSONL output (default: `test_results/bench.jsonl`) |
+
+Performance tests are skipped in the default CI suite. Locally:
+
+```bash
+PERFORMANCE_TESTS=1 cmake --build build --target test
+# optional cold-cache runs:
+PERFORMANCE_TESTS=1 BENCH_DROP_CACHES=1 PERFORMANCE_LARGE_TESTS=1 cmake --build build --target test
+jq -s '.' tests/test_results/bench.jsonl
+```
+
+Each JSONL line includes `fileMB`, `threads`, `mode` (`buffered`|`direct`|`iouring`|`iouring+direct`, plus optional depth/sqpoll modes when `BENCH_IOURING_KNOBS=1`), `cold` (`true`|`false`|`null` if drop skipped), `seconds`, `MBps`, `ok`.
 
 ## Test Framework Functions
 

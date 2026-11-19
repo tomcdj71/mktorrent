@@ -7,14 +7,14 @@ A simple command-line utility to create BitTorrent metainfo files.
 
 ## Features
 
-- Fast, multi-threaded hashing with OpenSSL support
-- Support for large files (>2GB)
-- Configurable piece length
-- Multiple tracker URLs
-- Private flag support
-- Web seed URLs support
-- Source string support
-- Comment field support
+- Multi-threaded hashing (OpenSSL or bundled SHA-1)
+- Large files, multi-target / `--from-file` / `--stdin`
+- Piece length as exponent or `K`/`M`/`G` byte sizes
+- Optional announce (DHT-only), web seeds, DHT `--node`
+- Private flag, source, comment, cross-seed
+- Include/exclude filters, `--skip-hidden`, `--no-follow-symlinks`
+- Opt-in `--direct-io` and `--io-uring` (liburing)
+- JSON create summary (`--json`)
 - Linux only
 
 ## Quick Start
@@ -27,19 +27,20 @@ A simple command-line utility to create BitTorrent metainfo files.
 
 ## Documentation
 
-For detailed documentation, please visit our [documentation](docs/Home.md) which includes:
+See [docs/Home.md](docs/Home.md):
 
 - [Installation Guide](docs/Installation-Guide.md)
 - [Command Line Options](docs/Command-Line-Options.md)
+- [Hashing and I/O](docs/Hashing-IO.md)
+- [Security](docs/Security.md)
+- [Testing](docs/Testing.md)
 - [Release Packages](docs/Release-Packages.md)
-- [FAQ](docs/FAQ.md)
+- [Release Notes](docs/Release-Notes.md)
 
 ## Support
 
-If you encounter any issues:
-1. Check the [FAQ](docs/FAQ.md)
-2. Search [existing issues](https://github.com/tomcdj71/mktorrent/issues)
-3. Open a new issue with detailed information
+1. Search [existing issues](https://github.com/tomcdj71/mktorrent/issues)
+2. Open a new issue with detailed information
 
 ## License
 

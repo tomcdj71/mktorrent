@@ -4,6 +4,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- batch ISA-L piece hashing in multi-buffer waves (auto stays OpenSSL)
+
+## [v1.8.0] - 2026-11-18
+
+### Added
+- add optional ISA-L Crypto SHA-1 piece backend
+- add opt-in io_uring depth and SQPOLL knobs
+- add --include patterns and --skip-hidden
+- add DHT nodes and human piece-length sizes
+
+### Fixed
+- close S3 path, pattern, and JSON gaps
+
+### Changed
+- add openssl+pthreads ISA-L matrix cell
+- document optional ISA-L SHA-1 backends and benches
+- cover --sha1 parity and sha1-isal bench modes
+- auto-detect optional isa-l_crypto for piece SHA-1
+- align man, README, and guides with current CLI
+- drop plan/wave wording from hashing notes
+- ignore local build-no-ssl CMake tree
+- document io_uring depth/SQPOLL and spot benches
+- cover io_uring knobs and optional bench modes
+- record warm SHA-1 scaling NO-GO
+- record many-small-files open-ahead NO-GO
+- document include/skip-hidden and cover in CLI tests
+- cover -l 1M parity and DHT --node embedding
+- document --node and human -l sizes
+- cover S3 path encoding, pattern caps, and JSON UTF-8
+- document S3 force, SHA-1, and OpenSSL notes
+
+## [v1.7.1] - 2026-11-18
+
+### Fixed
+- harden path walk, input caps, and large-file I/O
+
+### Changed
+- document S2 security caps and mmap limits
+- cover S2 caps, from-file overflow, and no-follow
+- enable liburing builds and real deb Depends
+- ignore local build-no-iou CMake tree
+
+## [v1.7.0] - 2026-11-18
+
+### Added
+- add opt-in io_uring piece reader
+- add --stdin, NUL path lists, and relative --exclude matching
+- emit JSON error object on failure when --json is set
+
+### Fixed
+- skip io_uring tests when liburing is unavailable
+- harden thread bounds, piece count, and force overwrite
+- reclaim io_uring buffers safely on cancel
+- print verbose option dump on stderr before hashing
+- wait on hash queues until interrupt instead of 30s timeout
+
+### Changed
+- add CLI security notes
+- cover thread bounds and -f truncation
+- document --io-uring hashing and bench modes
+- cover io_uring benches and CLI parity
+- add hash bench guide and io_uring decision notes
+- restore Linux pthread CPU affinity for hash workers
+- record cold and warm cache hash benches
+- add JSON hash throughput bench harness
+- cover JSON errors, stdin lists, and relative excludes
+- remove dead AIO and prefetch paths from threaded hasher
+
+## [v1.6.0] - 2026-11-17
+
+### Added
+- improve create UX, JSON summary, and CLI batch options
+- add optional JSON summary on create
+
+### Changed
+- automate semver release from conventional commits
+- run the non-performance test suite on openssl+pthreads builds
+- cover JSON, batch inputs, and updated exit codes
+- document piece-length exponent and align CLI references
+- bump GitHub Actions to current majors
+
 ## [v1.4.2] - 2025-04-09
 ### Fixed
 - Improves SHA-1 implementation security by using local buffers to prevent data modification
