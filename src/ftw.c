@@ -175,6 +175,9 @@ EXPORT int file_tree_walk(const char *dirname, unsigned int nfds,
 		*end = '\0';
 	}
 
+	/* Length of the walk root; used for relative --exclude matching. */
+	size_t root_len = (size_t)(end - path);
+
 	if (dir_state_open(ds, path, end - path))
 		return cleanup(ds, path, -1);
 
@@ -198,20 +201,9 @@ EXPORT int file_tree_walk(const char *dirname, unsigned int nfds,
 				continue;
 			}
 
-			bool should_skip = false;
-			LL_FOR(exclude_node, m->exclude_list) {
-				const char *exclude_pattern = LL_DATA(exclude_node);
-				if (fnmatch(exclude_pattern, de->d_name, 0) != FNM_NOMATCH) {
-					should_skip = true;
-					break;
-				}
-			}
-
-			if (should_skip) {
-				if (m->verbose)
-					printf("skipping %s\n", de->d_name);
+			/* --skip-hidden: any basename starting with '.' (dirs too). */
+			if (m->skip_hidden && de->d_name[0] == '.')
 				continue;
-			}
 
 			end = path + ds->length + 1;
 			p = de->d_name;
@@ -233,10 +225,60 @@ EXPORT int file_tree_walk(const char *dirname, unsigned int nfds,
 				}
 			}
 
-			if (stat(path, &sbuf)) {
+			if (m->no_follow_symlinks) {
+				if (lstat(path, &sbuf)) {
+					fprintf(stderr, "fatal error: cannot lstat '%s': %s\n",
+							path, strerror(errno));
+					return cleanup(ds, path, -1);
+				}
+				if (S_ISLNK(sbuf.st_mode)) {
+					fprintf(stderr, "warning: skipping symlink '%s'\n", path);
+					continue;
+				}
+			} else if (stat(path, &sbuf)) {
 				fprintf(stderr, "fatal error: cannot stat '%s': %s\n",
 						path, strerror(errno));
 				return cleanup(ds, path, -1);
+			}
+
+			/* include (files only) then exclude; exclude wins. Directories
+			 * always descend unless excluded so nested includes work. */
+			{
+				bool should_skip = false;
+				const char *rel = path + root_len;
+				if (*rel == DIRSEP_CHAR)
+					rel++;
+
+				if (!S_ISDIR(sbuf.st_mode)
+				    && m->include_list && !LL_IS_EMPTY(m->include_list)) {
+					bool included = false;
+					LL_FOR(include_node, m->include_list) {
+						const char *pat = LL_DATA(include_node);
+						if (fnmatch(pat, de->d_name, 0) != FNM_NOMATCH
+						    || (*rel && fnmatch(pat, rel, 0) != FNM_NOMATCH)) {
+							included = true;
+							break;
+						}
+					}
+					if (!included)
+						should_skip = true;
+				}
+
+				if (!should_skip && m->exclude_list) {
+					LL_FOR(exclude_node, m->exclude_list) {
+						const char *exclude_pattern = LL_DATA(exclude_node);
+						if (fnmatch(exclude_pattern, de->d_name, 0) != FNM_NOMATCH
+						    || (*rel && fnmatch(exclude_pattern, rel, 0) != FNM_NOMATCH)) {
+							should_skip = true;
+							break;
+						}
+					}
+				}
+				if (should_skip) {
+					if (m->verbose && !m->json_output && !m->quiet)
+						fprintf(stderr, "skipping %s\n", rel && *rel ? rel : de->d_name);
+					continue;
+				}
 			}
 
 			r = callback(path, &sbuf, data);

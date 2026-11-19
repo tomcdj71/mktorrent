@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <unistd.h>       /* read(), close() */
 #include <inttypes.h>     /* PRId64 etc. */
 #include <sys/stat.h>     /* struct stat */
+#include <signal.h>       /* sig_atomic_t */
 
 #ifdef USE_OPENSSL
 #include <openssl/sha.h>  /* SHA1() */
@@ -49,7 +50,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define MAX_READ_SIZE (4 * 1024 * 1024) /* 4MB maximum read size */
 
 /* External declaration of the force_exit flag */
-extern volatile int force_exit;
+extern volatile sig_atomic_t force_exit;
 
 /*
  * Get optimal block size for a file
@@ -180,10 +181,10 @@ EXPORT unsigned char *make_hash(struct metafile *m)
 		file_count++;
 
 		/* open the current file for reading */
-		fd = open(f->path, OPENFLAGS);
+		fd = open(file_read_path(f), OPENFLAGS);
 		if (fd == -1) {
 			fprintf(stderr, "Error: Cannot open '%s' for reading: %s\n", 
-				f->path, strerror(errno));
+				file_read_path(f), strerror(errno));
 			free(read_buf);
 			free(hash_string);
 #ifdef USE_OPENSSL
@@ -195,8 +196,10 @@ EXPORT unsigned char *make_hash(struct metafile *m)
 		/* Get optimal block size for this file */
 		optimal_block_size = get_optimal_block_size(fd);
 		
-		printf("hashing %s\n", f->path);
-		fflush(stdout);
+		if (!m->json_output && !m->quiet) {
+			fprintf(stderr, "hashing %s\n", file_read_path(f));
+			fflush(stdout);
+		}
 
 		/* Read data from the file in optimal-sized chunks */
 		while (remaining_file_size > 0 && !force_exit) {
@@ -213,7 +216,7 @@ EXPORT unsigned char *make_hash(struct metafile *m)
 			
 			if (bytes_read < 0) {
 				fprintf(stderr, "Error: Cannot read from '%s': %s\n",
-					f->path, strerror(errno));
+					file_read_path(f), strerror(errno));
 				close(fd);
 				free(read_buf);
 				free(hash_string);
@@ -271,7 +274,7 @@ EXPORT unsigned char *make_hash(struct metafile *m)
 		/* now close the file */
 		if (close(fd) != 0) {
 			fprintf(stderr, "Error: Cannot close '%s': %s\n",
-				f->path, strerror(errno));
+				file_read_path(f), strerror(errno));
 		}
 	}
 

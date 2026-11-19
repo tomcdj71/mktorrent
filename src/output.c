@@ -24,9 +24,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <time.h>         /* time() */
 #include <inttypes.h>     /* PRIuMAX */
 #include <stdlib.h>       /* random() */
+#include <stdarg.h>       /* va_list */
+#include <string.h>       /* memset */
 
 #ifdef USE_OPENSSL
 #include <openssl/sha.h>  /* SHA_DIGEST_LENGTH */
+#include <openssl/evp.h>
 #else
 #include "sha1.h"
 #endif
@@ -91,76 +94,6 @@ static int write_announce_list(FILE *f, struct ll *list)
 }
 
 /*
- * write file list
- * Returns 0 on success, -1 on error
- */
-static int write_file_list(FILE *f, struct ll *list)
-{
-	char *a, *b;
-	int err;
-
-	err = fprintf(f, "5:filesl");
-	if (err < 0) {
-		fprintf(stderr, "Error writing files list start\n");
-		return -1;
-	}
-
-	/* go through all the files */
-	LL_FOR(file_node, list) {
-		struct file_data *fd = LL_DATA_AS(file_node, struct file_data*);
-
-		/* the file list contains a dictionary for every file
-		   with entries for the length and path
-		   write the length first */
-		err = fprintf(f, "d6:lengthi%" PRIuMAX "e4:pathl", fd->size);
-		if (err < 0) {
-			fprintf(stderr, "Error writing file entry\n");
-			return -1;
-		}
-		
-		/* the file path is written as a list of subdirectories
-		   and the last entry is the filename
-		   sorry this code is even uglier than the rest */
-		a = fd->path;
-		/* while there are subdirectories before the filename.. */
-		while ((b = strchr(a, DIRSEP_CHAR)) != NULL) {
-			/* set the next DIRSEP_CHAR to '\0' so fprintf
-			   will only write the first subdirectory name */
-			*b = '\0';
-			/* print it bencoded */
-			err = fprintf(f, "%lu:%s", b - a, a);
-			if (err < 0) {
-				/* restore the path before returning */
-				*b = DIRSEP_CHAR;
-				fprintf(stderr, "Error writing directory name\n");
-				return -1;
-			}
-			/* undo our alteration to the string */
-			*b = DIRSEP_CHAR;
-			/* and move a to the beginning of the next
-			   subdir or filename */
-			a = b + 1;
-		}
-		/* now print the filename bencoded and end the
-		   path name list and file dictionary */
-		err = fprintf(f, "%lu:%see", (unsigned long)strlen(a), a);
-		if (err < 0) {
-			fprintf(stderr, "Error writing filename\n");
-			return -1;
-		}
-	}
-
-	/* whew, now end the file list */
-	err = fprintf(f, "e");
-	if (err < 0) {
-		fprintf(stderr, "Error writing files list end\n");
-		return -1;
-	}
-	
-	return 0;
-}
-
-/*
  * write web seed list
  * Returns 0 on success, -1 on error
  */
@@ -197,48 +130,174 @@ static int write_web_seed_list(FILE *f, struct ll *list)
 }
 
 /*
- * Generate random data for cross-seeding
- * Returns 0 on success, -1 on error
+ * write metainfo to the file stream using all the information
+ * we've gathered so far and the hash string calculated.
+ * Also computes the info-hash (SHA-1 of the bencoded info dict).
  */
-static int write_cross_seed_data(FILE *f)
+struct info_sha {
+#ifdef USE_OPENSSL
+	EVP_MD_CTX *ctx;
+#else
+	SHA_CTX ctx;
+#endif
+	int ok;
+};
+
+static int info_sha_init(struct info_sha *h)
 {
-	int i;
-	int err;
-	
-	err = fprintf(f, "12:x_cross_seed%u:mktorrent-", CROSS_SEED_RAND_LENGTH * 2 + 10);
-	if (err < 0) {
-		fprintf(stderr, "Error writing cross-seed field\n");
+	memset(h, 0, sizeof(*h));
+#ifdef USE_OPENSSL
+	h->ctx = EVP_MD_CTX_new();
+	if (h->ctx == NULL)
+		return -1;
+	if (EVP_DigestInit_ex(h->ctx, EVP_sha1(), NULL) != 1) {
+		EVP_MD_CTX_free(h->ctx);
+		h->ctx = NULL;
 		return -1;
 	}
-	
-	for (i = 0; i < CROSS_SEED_RAND_LENGTH; i++) {
-		unsigned char rand_byte = random();
-		if (fputc("0123456789ABCDEF"[rand_byte >> 4], f) == EOF) {
-			fprintf(stderr, "Error writing cross-seed data\n");
-			return -1;
-		}
-		if (fputc("0123456789ABCDEF"[rand_byte & 0x0F], f) == EOF) {
-			fprintf(stderr, "Error writing cross-seed data\n");
-			return -1;
-		}
-	}
-	
+#else
+	SHA1_Init(&h->ctx);
+#endif
+	h->ok = 1;
 	return 0;
 }
 
-/*
- * write metainfo to the file stream using all the information
- * we've gathered so far and the hash string calculated
- */
+static void info_sha_update(struct info_sha *h, const void *data, size_t len)
+{
+	if (!h || !h->ok || len == 0)
+		return;
+#ifdef USE_OPENSSL
+	if (EVP_DigestUpdate(h->ctx, data, len) != 1)
+		h->ok = 0;
+#else
+	SHA1_Update(&h->ctx, (const uint8_t *)data, (unsigned long)len);
+#endif
+}
+
+static int info_sha_final(struct info_sha *h, unsigned char out[SHA_DIGEST_LENGTH])
+{
+	if (!h || !h->ok)
+		return -1;
+#ifdef USE_OPENSSL
+	unsigned int outlen = 0;
+	if (EVP_DigestFinal_ex(h->ctx, out, &outlen) != 1 || outlen != SHA_DIGEST_LENGTH) {
+		EVP_MD_CTX_free(h->ctx);
+		h->ctx = NULL;
+		return -1;
+	}
+	EVP_MD_CTX_free(h->ctx);
+	h->ctx = NULL;
+#else
+	SHA1_Final(out, &h->ctx);
+#endif
+	return 0;
+}
+
+static int emit_bytes(FILE *f, struct info_sha *h, const void *buf, size_t len)
+{
+	if (fwrite(buf, 1, len, f) != len)
+		return -1;
+	info_sha_update(h, buf, len);
+	return 0;
+}
+
+static int emit_fmt(FILE *f, struct info_sha *h, const char *fmt, ...)
+{
+	char stackbuf[4096];
+	char *buf = stackbuf;
+	size_t cap = sizeof(stackbuf);
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = vsnprintf(buf, cap, fmt, ap);
+	va_end(ap);
+	if (n < 0)
+		return -1;
+	if ((size_t)n >= cap) {
+		cap = (size_t)n + 1;
+		buf = malloc(cap);
+		if (!buf)
+			return -1;
+		va_start(ap, fmt);
+		n = vsnprintf(buf, cap, fmt, ap);
+		va_end(ap);
+		if (n < 0 || (size_t)n >= cap) {
+			free(buf);
+			return -1;
+		}
+	}
+	int rc = emit_bytes(f, h, buf, (size_t)n);
+	if (buf != stackbuf)
+		free(buf);
+	return rc;
+}
+
+static int write_announce_list_hashed(FILE *f, struct ll *list)
+{
+	/* announce-list is outside info; keep original helper */
+	return write_announce_list(f, list);
+}
+
+static int write_file_list_hashed(FILE *f, struct info_sha *h, struct ll *list)
+{
+	char *a, *b;
+
+	if (emit_fmt(f, h, "5:filesl") != 0)
+		return -1;
+
+	LL_FOR(file_node, list) {
+		struct file_data *fd = LL_DATA_AS(file_node, struct file_data*);
+
+		if (emit_fmt(f, h, "d6:lengthi%" PRIuMAX "e4:pathl", fd->size) != 0)
+			return -1;
+
+		/* Emit path segments without mutating fd->path (MK-020). */
+		a = fd->path;
+		while ((b = strchr(a, DIRSEP_CHAR)) != NULL) {
+			if (emit_fmt(f, h, "%lu:%.*s",
+					(unsigned long)(b - a), (int)(b - a), a) != 0)
+				return -1;
+			a = b + 1;
+		}
+		if (emit_fmt(f, h, "%lu:%see", (unsigned long)strlen(a), a) != 0)
+			return -1;
+	}
+
+	if (emit_fmt(f, h, "e") != 0)
+		return -1;
+	return 0;
+}
+
+static int write_cross_seed_data_hashed(FILE *f, struct info_sha *h)
+{
+	int i;
+	if (emit_fmt(f, h, "12:x_cross_seed%u:mktorrent-", CROSS_SEED_RAND_LENGTH * 2 + 10) != 0)
+		return -1;
+	for (i = 0; i < CROSS_SEED_RAND_LENGTH; i++) {
+		unsigned char rand_byte = random();
+		char hex[3];
+		hex[0] = "0123456789ABCDEF"[rand_byte >> 4];
+		hex[1] = "0123456789ABCDEF"[rand_byte & 0x0F];
+		if (emit_bytes(f, h, hex, 2) != 0)
+			return -1;
+	}
+	return 0;
+}
+
 EXPORT int write_metainfo(FILE *f, struct metafile *m, unsigned char *hash_string)
 {
 	int err;
+	struct info_sha ih;
 
-	/* let the user know we've started writing the metainfo file */
-	printf("writing metainfo file... ");
-	fflush(stdout);
+	m->info_hash_valid = 0;
 
-	/* every metainfo file is one big dictonary */
+	/* progress / status on stderr only */
+	if (!m->json_output && !m->quiet) {
+		fprintf(stderr, "writing metainfo file... ");
+		fflush(stderr);
+	}
+
 	err = fprintf(f, "d");
 	if (err < 0) {
 		fprintf(stderr, "Error writing dictionary start\n");
@@ -248,8 +307,6 @@ EXPORT int write_metainfo(FILE *f, struct metafile *m, unsigned char *hash_strin
 	if (!LL_IS_EMPTY(m->announce_list)) {
 		struct ll *first_tier =
 			LL_DATA_AS(LL_HEAD(m->announce_list), struct ll*);
-
-		/* write the announce URL */
 		const char *first_announce_url
 			= LL_DATA_AS(LL_HEAD(first_tier), const char*);
 
@@ -260,19 +317,12 @@ EXPORT int write_metainfo(FILE *f, struct metafile *m, unsigned char *hash_strin
 			return -1;
 		}
 
-		/* write the announce-list entry if we have
-		 * more than one announce URL, namely
-		 * a) there are at least two tiers, or      (first part of OR)
-		 * b) there are at least two URLs in tier 1 (second part of OR)
-		 */
 		if (LL_NEXT(LL_HEAD(m->announce_list)) || LL_NEXT(LL_HEAD(first_tier))) {
-			if (write_announce_list(f, m->announce_list) != 0) {
+			if (write_announce_list_hashed(f, m->announce_list) != 0)
 				return -1;
-			}
 		}
 	}
 
-	/* add the comment if one is specified */
 	if (m->comment != NULL) {
 		err = fprintf(f, "7:comment%lu:%s",
 				(unsigned long)strlen(m->comment),
@@ -286,7 +336,7 @@ EXPORT int write_metainfo(FILE *f, struct metafile *m, unsigned char *hash_strin
 #ifndef VERSION
 #define VERSION "1.1"
 #endif
-    char const *const created_by = "mktorrent " VERSION;
+	char const *const created_by = "mktorrent " VERSION;
 	if (!m->no_created_by) {
 		err = fprintf(f, "10:created by%zu:%s", strlen(created_by), created_by);
 		if (err < 0) {
@@ -295,7 +345,6 @@ EXPORT int write_metainfo(FILE *f, struct metafile *m, unsigned char *hash_strin
 		}
 	}
 
-	/* add the creation date */
 	if (!m->no_creation_date) {
 		err = fprintf(f, "13:creation datei%lde",
 			(long)time(NULL));
@@ -305,80 +354,100 @@ EXPORT int write_metainfo(FILE *f, struct metafile *m, unsigned char *hash_strin
 		}
 	}
 
-	/* now here comes the info section
-	   it is yet another dictionary */
-	err = fprintf(f, "4:infod");
+	/* info key prefix is NOT part of the info-hash */
+	err = fprintf(f, "4:info");
 	if (err < 0) {
+		fprintf(stderr, "Error writing info key\n");
+		return -1;
+	}
+
+	if (info_sha_init(&ih) != 0) {
+		fprintf(stderr, "Error initializing info-hash\n");
+		return -1;
+	}
+
+	if (emit_fmt(f, &ih, "d") != 0) {
 		fprintf(stderr, "Error writing info dictionary start\n");
 		return -1;
 	}
 
-	/* first entry is either 'length', which specifies the length of a
-	   single file torrent, or a list of files and their respective sizes */
 	if (!m->target_is_directory) {
-		err = fprintf(f, "6:lengthi%" PRIuMAX "e",
-			LL_DATA_AS(LL_HEAD(m->file_list), struct file_data*)->size);
-		if (err < 0) {
+		if (emit_fmt(f, &ih, "6:lengthi%" PRIuMAX "e",
+			LL_DATA_AS(LL_HEAD(m->file_list), struct file_data*)->size) != 0) {
 			fprintf(stderr, "Error writing single file length\n");
 			return -1;
 		}
 	} else {
-		if (write_file_list(f, m->file_list) != 0) {
+		if (write_file_list_hashed(f, &ih, m->file_list) != 0)
 			return -1;
-		}
 	}
 
-	/* add cross-seed data if requested */
 	if (m->cross_seed) {
-		if (write_cross_seed_data(f) != 0) {
+		if (write_cross_seed_data_hashed(f, &ih) != 0)
 			return -1;
-		}
 	}
 
-	/* the info section also contains the name of the torrent,
-	   the piece length and the hash string */
-	err = fprintf(f, "4:name%lu:%s12:piece lengthi%ue6:pieces%u:",
+	if (emit_fmt(f, &ih, "4:name%lu:%s12:piece lengthi%ue6:pieces%u:",
 		(unsigned long)strlen(m->torrent_name), m->torrent_name,
-		m->piece_length, m->pieces * SHA_DIGEST_LENGTH);
-	if (err < 0) {
+		m->piece_length, m->pieces * SHA_DIGEST_LENGTH) != 0) {
 		fprintf(stderr, "Error writing torrent name and piece data\n");
 		return -1;
 	}
 
-	/* write the hash data */
-	if (fwrite(hash_string, 1, m->pieces * SHA_DIGEST_LENGTH, f)
-			!= m->pieces * SHA_DIGEST_LENGTH) {
+	if (emit_bytes(f, &ih, hash_string, m->pieces * SHA_DIGEST_LENGTH) != 0) {
 		fprintf(stderr, "Error writing piece hashes\n");
 		return -1;
 	}
 
-	/* set the private flag */
 	if (m->private) {
-		err = fprintf(f, "7:privatei1e");
-		if (err < 0) {
+		if (emit_fmt(f, &ih, "7:privatei1e") != 0) {
 			fprintf(stderr, "Error writing private flag\n");
 			return -1;
 		}
 	}
 
-	/* add source if specified */
 	if (m->source) {
-		err = fprintf(f, "6:source%lu:%s",
-			(unsigned long) strlen(m->source), m->source);
-		if (err < 0) {
+		if (emit_fmt(f, &ih, "6:source%lu:%s",
+			(unsigned long) strlen(m->source), m->source) != 0) {
 			fprintf(stderr, "Error writing source\n");
 			return -1;
 		}
 	}
 
-	/* end the info section */
-	err = fprintf(f, "e");
-	if (err < 0) {
+	if (emit_fmt(f, &ih, "e") != 0) {
 		fprintf(stderr, "Error ending info dictionary\n");
 		return -1;
 	}
 
-	/* add url-list if one is specified */
+	if (info_sha_final(&ih, m->info_hash) != 0) {
+		fprintf(stderr, "Error finalizing info-hash\n");
+		return -1;
+	}
+	m->info_hash_valid = 1;
+
+	if (m->node_list && !LL_IS_EMPTY(m->node_list)) {
+		err = fprintf(f, "5:nodesl");
+		if (err < 0) {
+			fprintf(stderr, "Error writing nodes list start\n");
+			return -1;
+		}
+		LL_FOR(node_el, m->node_list) {
+			struct dht_node *n = LL_DATA_AS(node_el, struct dht_node *);
+
+			err = fprintf(f, "l%lu:%si%uee",
+				(unsigned long)strlen(n->host), n->host, n->port);
+			if (err < 0) {
+				fprintf(stderr, "Error writing DHT node\n");
+				return -1;
+			}
+		}
+		err = fprintf(f, "e");
+		if (err < 0) {
+			fprintf(stderr, "Error writing nodes list end\n");
+			return -1;
+		}
+	}
+
 	if (!LL_IS_EMPTY(m->web_seed_list)) {
 		if (LL_IS_SINGLETON(m->web_seed_list)) {
 			const char *first_web_seed =
@@ -391,28 +460,26 @@ EXPORT int write_metainfo(FILE *f, struct metafile *m, unsigned char *hash_strin
 				return -1;
 			}
 		} else {
-			if (write_web_seed_list(f, m->web_seed_list) != 0) {
+			if (write_web_seed_list(f, m->web_seed_list) != 0)
 				return -1;
-			}
 		}
 	}
 
-	/* end the root dictionary */
 	err = fprintf(f, "e");
 	if (err < 0) {
 		fprintf(stderr, "Error ending root dictionary\n");
 		return -1;
 	}
 
-	/* Make sure data is flushed to disk */
 	if (fflush(f) != 0) {
 		fprintf(stderr, "Error flushing metainfo file to disk\n");
 		return -1;
 	}
 
-	/* let the user know we're done already */
-	printf("done\n");
-	fflush(stdout);
+	if (!m->json_output && !m->quiet) {
+		fprintf(stderr, "done\n");
+		fflush(stderr);
+	}
 
 	return 0;
 }

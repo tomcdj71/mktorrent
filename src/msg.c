@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <stdarg.h>
 
 #include "export.h"
+#include "mktorrent.h"
 #include "msg.h"
 
 
@@ -36,5 +37,5 @@ EXPORT void fatal(const char *format, ...)
 
 	va_end(args);
 
-	exit(EXIT_FAILURE);
+	exit(MKTORRENT_EXIT_USAGE);
 }
