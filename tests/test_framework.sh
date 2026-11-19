@@ -8,8 +8,14 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-# Path to mktorrent executable
-MKTORRENT="$(realpath ../build/mktorrent)"
+# Path to mktorrent executable (prefer env from CMake / CI)
+if [ -n "${MKTORRENT:-}" ] && [ -x "$MKTORRENT" ]; then
+    :
+elif [ -n "${MKTORRENT_BINARY:-}" ] && [ -x "$MKTORRENT_BINARY" ]; then
+    MKTORRENT="$MKTORRENT_BINARY"
+else
+    MKTORRENT="$(realpath ../build/mktorrent)"
+fi
 
 # Test data directory
 TEST_DATA_DIR="$(realpath ./test_data)"

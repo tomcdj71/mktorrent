@@ -56,7 +56,8 @@ def parse_torrent(filepath):
 
 def validate_torrent_structure(torrent_data):
     """Validate the structure of a torrent file."""
-    required_keys = ['info', 'announce']
+    # announce is optional (DHT-only torrents)
+    required_keys = ['info']
     info_keys = ['piece length', 'pieces']
     
     # Check required keys
