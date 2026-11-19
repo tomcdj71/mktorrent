@@ -4,8 +4,8 @@ on:
   push:
     branches: [master]
     paths:
-      - 'docs/**'
-      - '.github/workflows/publish-wiki.yaml'
+      - "docs/**"
+      - ".github/workflows/publish-wiki.yaml"
 
 concurrency:
   group: publish-wiki
@@ -18,10 +18,10 @@ jobs:
   publish-wiki:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      
+
       - name: Get last two tags
         id: tags
         run: |
@@ -37,7 +37,7 @@ jobs:
             echo "TAG1=initial" >> $GITHUB_OUTPUT
             echo "TAG2=none" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Update documentation with version info
         run: |
           sed -i "s/Current Version: .*/Current Version: ${{ steps.tags.outputs.TAG1 }}/" docs/Home.md
@@ -46,9 +46,9 @@ jobs:
             echo -e "\n## Changes between ${{ steps.tags.outputs.TAG2 }} and ${{ steps.tags.outputs.TAG1 }}\n" >> docs/Release-Notes.md
             git log --pretty=format:"- %s" ${{ steps.tags.outputs.TAG2 }}..${{ steps.tags.outputs.TAG1 }} >> docs/Release-Notes.md
           fi
-      
+
       - name: Publish to Wiki
-        uses: Andrew-Chen-Wang/github-wiki-action@v4
+        uses: Andrew-Chen-Wang/github-wiki-action@v5
         with:
           path: docs/
           commit-message: "docs: update documentation [automated]"

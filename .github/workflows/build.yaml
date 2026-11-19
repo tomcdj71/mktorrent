@@ -4,41 +4,139 @@ on:
   push:
     branches: [master]
     paths:
-      - 'CMakeLists.txt'
-      - '.github/workflows/build.yaml'
+      - "CMakeLists.txt"
+      - ".github/workflows/build.yaml"
+      - "src/**"
+      - "include/**"
+      - "tests/**"
+      - "man/**"
+      - "docs/Release-Notes.md"
+      - "scripts/semver_release.py"
+  pull_request:
+    branches: [master]
+    paths:
+      - "CMakeLists.txt"
+      - ".github/workflows/build.yaml"
+      - "src/**"
+      - "include/**"
+      - "tests/**"
+      - "man/**"
+      - "docs/Release-Notes.md"
+      - "scripts/semver_release.py"
 
 permissions:
   contents: write
 
 jobs:
+  plan_version:
+    name: Plan semver
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.semver.outputs.should_release }}
+      version: ${{ steps.semver.outputs.version }}
+      tag: ${{ steps.semver.outputs.tag }}
+      bump: ${{ steps.semver.outputs.bump }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: semver
+        run: |
+          python3 scripts/semver_release.py --github-output
+          python3 scripts/semver_release.py | tee /tmp/semver.json
+
   build:
     name: build mktorrent
     runs-on: ${{ matrix.os }}
+    needs: plan_version
 
     strategy:
       matrix:
         os: [ubuntu-latest]
         openssl: ["ON", "OFF"]
         pthreads: ["ON", "OFF"]
+        isal: ["OFF"]
+        include:
+          # Optional ISA-L Crypto SHA-1 cell (openssl+pthreads); builds isa-l_crypto from source
+          - os: ubuntu-latest
+            openssl: "ON"
+            pthreads: "ON"
+            isal: "ON"
       fail-fast: false
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Apply planned version for packaging
+        if: needs.plan_version.outputs.should_release == 'true'
+        run: python3 scripts/semver_release.py --apply
+
+      - name: Install liburing (io_uring cell)
+        if: matrix.openssl == 'ON' && matrix.pthreads == 'ON'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq liburing-dev
+
+      - name: Build and install isa-l_crypto (ISA-L cell)
+        if: matrix.isal == 'ON'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nasm autoconf libtool build-essential pkg-config
+          ISAL_VER=2.25.0
+          git clone --depth 1 --branch "v${ISAL_VER}" \
+            https://github.com/intel/isa-l_crypto.git /tmp/isa-l_crypto
+          cd /tmp/isa-l_crypto
+          git submodule update --init --recursive
+          ./autogen.sh
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          sudo make install
+          sudo ldconfig
+          pkg-config --exists libisal_crypto
+          pkg-config --modversion libisal_crypto
 
       - name: Build
         run: |
           mk_version=$(awk '/project\(mktorrent/,/\)/ { if ($1 ~ /VERSION/) print $2 }' CMakeLists.txt | tr -d ')')
           echo "MKTORRENT_VERSION=$mk_version" >> $GITHUB_ENV
+          ISAL_FLAG=OFF
+          if [ "${{ matrix.isal }}" = "ON" ]; then
+            ISAL_FLAG=ON
+            export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          fi
           cmake -S . -B build \
             -DMKTORRENT_LONG_OPTIONS=ON \
             -DMKTORRENT_PTHREADS=${{ matrix.pthreads }} \
             -DMKTORRENT_OPENSSL=${{ matrix.openssl }} \
+            -DMKTORRENT_ISAL=${ISAL_FLAG} \
             -DMKTORRENT_USE_GITREV_VERSION=ON \
+            -DMKTORRENT_TEST=${{ matrix.openssl == 'ON' && matrix.pthreads == 'ON' && 'ON' || 'OFF' }} \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            --graphviz=build/target_graph.dot
+            --graphviz=build/target_graph.dot 2>&1 | tee /tmp/cmake-mktorrent.log
+          if [ "${{ matrix.isal }}" = "ON" ]; then
+            grep -q 'ISA-L Crypto SHA-1: ON' /tmp/cmake-mktorrent.log
+          else
+            if grep -q 'ISA-L Crypto SHA-1: ON' /tmp/cmake-mktorrent.log; then
+              echo "unexpected ISA-L ON without matrix.isal=ON"
+              exit 1
+            fi
+          fi
           cmake --build build
+
+      - name: Test suite
+        if: matrix.openssl == 'ON' && matrix.pthreads == 'ON'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq python3
+          cmake --build build --target test
 
       - name: Get short commit hash for artifact name
         id: short-hash
@@ -53,7 +151,11 @@ jobs:
           distro=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
           codename=$(lsb_release -cs)
           os="$distro-$codename"
-          full_version="_${{ env.MKTORRENT_VERSION }}_openssl-${{ matrix.openssl }}_pthreads-${{ matrix.pthreads }}-${os}"
+          isal_tag=""
+          if [ "${{ matrix.isal }}" = "ON" ]; then
+            isal_tag="_isal-ON"
+          fi
+          full_version="_${{ env.MKTORRENT_VERSION }}_openssl-${{ matrix.openssl }}_pthreads-${{ matrix.pthreads }}${isal_tag}-${os}"
           echo "FULL_VERSION=$full_version" >> $GITHUB_ENV
 
       - name: Build Debian Package
@@ -68,6 +170,10 @@ jobs:
           chmod +x "$mktorrent_bin"
           cp $mktorrent_bin "$PKG_DIR/usr/bin/mktorrent"
           installed_size=$(du -s -k "$PKG_DIR" | cut -f1)
+          sudo apt-get install -y -qq dpkg-dev
+          # MK-025: real shared-library Depends (libc, libssl, liburing, libisal_crypto when linked)
+          shlib_depends=$(dpkg-shlibdeps -O "$PKG_DIR/usr/bin/mktorrent" 2>/dev/null | sed -n 's/^shlibs:Depends=//p')
+          [ -n "$shlib_depends" ] || shlib_depends="libc6"
           temp_file=$(mktemp)
           cat > "$temp_file" <<EOF
           Description: Simple command-line torrent file creator
@@ -77,6 +183,7 @@ jobs:
            Compiler options:
             - USE_OPENSSL=${{ matrix.openssl == 'ON' && '1' || '0' }}
             - USE_PTHREADS=${{ matrix.pthreads == 'ON' && '1' || '0' }}
+            - USE_ISAL=${{ matrix.isal == 'ON' && '1' || '0' }}
             - USE_LONG_OPTIONS=1
            . 
            Compiled on $(date +%Y-%m-%d).
@@ -87,10 +194,10 @@ jobs:
           Architecture: amd64
           Maintainer: ${COMMITTER_NAME} <${COMMITTER_EMAIL}>
           Installed-Size: $installed_size
-          Depends: libc6
+          Depends: ${shlib_depends}
           Section: net
           Priority: optional
-          Homepage: https://github.com/tomcj71/mktorrent
+          Homepage: https://github.com/tomcdj71/mktorrent
           EOF
           cat "$temp_file" >> "$PKG_DIR/DEBIAN/control"
           cd "$PKG_DIR"
@@ -101,46 +208,41 @@ jobs:
           mv "mktorrent${{ env.FULL_VERSION }}_amd64.deb" artifacts/
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: artifacts-${{ matrix.os }}-openssl-${{ matrix.openssl }}-pthreads-${{ matrix.pthreads }}
+          name: artifacts-${{ matrix.os }}-openssl-${{ matrix.openssl }}-pthreads-${{ matrix.pthreads }}-isal-${{ matrix.isal }}
           path: artifacts/
 
   create_release:
     name: Create GitHub Release
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/master' &&
+      needs.plan_version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    needs: build
+    needs: [plan_version, build]
     permissions:
       contents: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Version from Makefile
-        id: extract_version
+      - name: Apply version bump and changelog
+        id: semver
         run: |
-          mk_version=$(awk '/project\(mktorrent/,/\)/ { if ($1 ~ /VERSION/) print $2 }' CMakeLists.txt | tr -d ')')
-          echo "Detected version: $mk_version"
-          echo "version=$mk_version" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          python3 scripts/semver_release.py --apply --github-output
+          python3 scripts/semver_release.py | tee /tmp/semver.json
+          test "$(jq -r .should_release /tmp/semver.json)" = "true"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: downloaded_artifacts
-
-      - name: Create Git Tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COMMITTER_NAME: ${{ secrets.COMMITTER_NAME }}
-          COMMITTER_EMAIL: ${{ secrets.COMMITTER_EMAIL }}
-        run: |
-          git config user.name "${COMMITTER_NAME}"
-          git config user.email "${COMMITTER_EMAIL}"
-          git tag v${{ steps.extract_version.outputs.version }}
-          git push origin v${{ steps.extract_version.outputs.version }}
 
       - name: Prepare release assets
         run: |
@@ -153,7 +255,6 @@ jobs:
           TEMP_DIR=$(mktemp -d)
           PACKAGES_TABLE="$TEMP_DIR/packages.md"
           CONFIG_TABLE="$TEMP_DIR/config.md"
-          # Generate packages table
           {
             echo "| Package | OpenSSL | PThreads |"
             echo "| ------- | ------- | -------- |"
@@ -167,12 +268,12 @@ jobs:
             done
           } > "$PACKAGES_TABLE"
 
-          # Generate config table
           {
             echo "| Option | Value |"
             echo "| ------ | ----- |"
             echo "| Long Options | Enabled |"
             echo "| Build Type | RelWithDebInfo |"
+            echo "| Semver bump | ${{ needs.plan_version.outputs.bump }} |"
           } > "$CONFIG_TABLE"
           echo "packages_table<<EOF" >> $GITHUB_OUTPUT
           cat "$PACKAGES_TABLE" >> $GITHUB_OUTPUT
@@ -180,47 +281,64 @@ jobs:
           echo "config_table<<EOF" >> $GITHUB_OUTPUT
           cat "$CONFIG_TABLE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          CHANGELOG=$(jq -r .changelog /tmp/semver.json)
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          printf '%s\n' "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           rm -rf "$TEMP_DIR"
 
+      - name: Commit version files, tag, and push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMITTER_NAME: ${{ secrets.COMMITTER_NAME }}
+          COMMITTER_EMAIL: ${{ secrets.COMMITTER_EMAIL }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.plan_version.outputs.version }}"
+          TAG="${{ needs.plan_version.outputs.tag }}"
+          git config user.name "${COMMITTER_NAME}"
+          git config user.email "${COMMITTER_EMAIL}"
+          git add CMakeLists.txt man/mktorrent.1 docs/Release-Notes.md
+          if git diff --cached --quiet; then
+            echo "Version files already at ${VERSION}"
+          else
+            git commit -m "chore(release): v${VERSION}"
+          fi
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} already exists locally"
+          else
+            git tag "${TAG}"
+          fi
+          git push origin HEAD:master
+          git push origin "${TAG}"
+
       - name: Create GitHub Release with Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ steps.extract_version.outputs.version }}
-          name: Release v${{ steps.extract_version.outputs.version }}
+          tag_name: ${{ needs.plan_version.outputs.tag }}
+          name: Release ${{ needs.plan_version.outputs.tag }}
           generate_release_notes: true
           body: |
-            # MKTorrent v${{ steps.extract_version.outputs.version }}
+            # MKTorrent ${{ needs.plan_version.outputs.tag }}
 
             Pre-built MKTorrent packages for creating BitTorrent metainfo files.
 
-            ## 🎯 Features
+            ## Changelog
 
-            - Simple and efficient command-line torrent file creator
-            - Support for both single file and directory torrents
-            - Configurable piece length and multiple announce URLs
-            - Pre-compiled binaries ready to use
-            - Automated builds via GitHub Actions
+            ${{ steps.prepare_notes.outputs.changelog }}
 
-            ## 📦 Available Packages
+            ## Available Packages
 
             ${{ steps.prepare_notes.outputs.packages_table }}
 
-            ## 🔧 Build Configuration
+            ## Build Configuration
 
             ${{ steps.prepare_notes.outputs.config_table }}
 
-            ## 📋 Installation
+            ## Installation
 
-            ### Manual Installation
-            1. Download the appropriate .deb package for your system
-            2. Install using: `sudo dpkg -i package_name.deb`
-            3. Fix any dependencies if needed: `sudo apt-get install -f`
-
-            ## 🔍 Package Details
-
-            The packages are built with:
-            - System-wide installation in `/usr/bin/mktorrent`
-            - Man page in `/usr/share/man/man1/mktorrent.1`
-            - Compiled on $(date +%Y-%m-%d)
+            1. Download the appropriate `.deb` package
+            2. Install: `sudo dpkg -i package_name.deb`
+            3. Fix dependencies if needed: `sudo apt-get install -f`
           files: |
             release_assets/*
