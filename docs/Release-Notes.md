@@ -12,8 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - extend create CLI, hashing backends, and I/O paths
 
 ### Changed
-- add README performance charts and align guides
-- clear Release-Notes for v1.6.0 re-release
+- add warm-cache throughput charts to README
 - sync man and doc versions from CMakeLists
 - tighten hashing throughput notes
 - ignore local CMake and bench worktrees
