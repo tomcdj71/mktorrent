@@ -12,13 +12,13 @@ Naming pattern:
 mktorrent_<version>_openssl-<ON|OFF>_pthreads-<ON|OFF>-ubuntu-latest_amd64.deb
 ```
 
-Example for version `1.7.0`:
+Example for version `1.5.0`:
 
 ```
-mktorrent_1.7.0_openssl-ON_pthreads-ON-ubuntu-latest_amd64.deb
-mktorrent_1.7.0_openssl-ON_pthreads-OFF-ubuntu-latest_amd64.deb
-mktorrent_1.7.0_openssl-OFF_pthreads-ON-ubuntu-latest_amd64.deb
-mktorrent_1.7.0_openssl-OFF_pthreads-OFF-ubuntu-latest_amd64.deb
+mktorrent_1.5.0_openssl-ON_pthreads-ON-ubuntu-latest_amd64.deb
+mktorrent_1.5.0_openssl-ON_pthreads-OFF-ubuntu-latest_amd64.deb
+mktorrent_1.5.0_openssl-OFF_pthreads-ON-ubuntu-latest_amd64.deb
+mktorrent_1.5.0_openssl-OFF_pthreads-OFF-ubuntu-latest_amd64.deb
 ```
 
 See [releases](https://github.com/tomcdj71/mktorrent/releases) for the exact current filenames.

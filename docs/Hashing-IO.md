@@ -2,7 +2,7 @@
 
 ## Default I/O policy
 
-- **`-t 1`:** buffered `read()` straight into owned piece buffers (Rudde-style), with `posix_fadvise(SEQUENTIAL)`.
+- **`-t 1`:** buffered `read()` straight into owned piece buffers (pobrn/mktorrent-style), with `posix_fadvise(SEQUENTIAL)`.
 - **`-t > 1`:** **zero-copy mmap** — map each file and queue piece views that point into the mapping (no memcpy of full pieces). Cross-file partial pieces still copy into an owned buffer. Mappings stay alive until hashing finishes. Falls back to `read()` if mmap fails or `--direct-io` is set.
 - **O_DIRECT** only when `--direct-io` is passed (and the file is large enough). Warm page cache workloads are usually faster without O_DIRECT.
 - **io_uring** only when `--io-uring` is passed (Linux build linked with liburing). Reads fill the existing piece-buffer queue so SHA-1 workers overlap with disk I/O. It is never the default; use it when cold-cache benches show a clear gain versus buffered I/O. Combinable with `--direct-io`.
@@ -14,7 +14,7 @@
 
 - Default worker count is the number of online CPU cores, capped at **64**.
 - Override with `-t` / `--threads` (must be an integer in **[1, 64]**).
-- OpenSSL/bundled workers use a lean one-piece-at-a-time loop and a piece-buffer pool of about **3 × threads** (Rudde-style). ISA-L keeps multi-buffer batching and a larger pool.
+- OpenSSL/bundled workers use a lean one-piece-at-a-time loop and a piece-buffer pool of about **3 × threads** (pobrn-style). ISA-L keeps multi-buffer batching and a larger pool.
 - Workers are **not** CPU-pinned by default.
 
 ## Security
@@ -82,7 +82,7 @@ Rough numbers from warm buffered runs on one laptop (OpenSSL, no io_uring):
 | OpenSSL vs bundled `sha1.c` | ~**2×** |
 | `--sha1=isal` vs OpenSSL | below the **≥15 %** bar used for `auto` |
 
-### Versus Rudde/mktorrent 1.1
+### Versus pobrn/mktorrent 1.1
 
 Warm **2 GiB**, `-l 20`, OpenSSL: about even at `-t 1`, roughly **+10 %** at `-t $(nproc)` after matching the upstream read/queue shape (no mmap+memcpy).
 

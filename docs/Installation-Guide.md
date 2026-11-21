@@ -15,17 +15,17 @@ This guide provides detailed instructions for installing MKTorrent on your syste
 ## Prerequisites
 
 ### Required Dependencies
-| Dependency | Minimum Version | Purpose |
-|------------|----------------|----------|
-| CMake | 3.20 | Build system |
-| GCC/Clang | Any recent | Compiler |
-| POSIX threads | - | Multi-threading support |
+| Dependency    | Minimum Version | Purpose                 |
+| ------------- | --------------- | ----------------------- |
+| CMake         | 3.20            | Build system            |
+| GCC/Clang     | Any recent      | Compiler                |
+| POSIX threads | -               | Multi-threading support |
 
 ### Optional Dependencies
-| Dependency | Purpose | Benefit |
-|------------|---------|----------|
-| OpenSSL | SHA-1 implementation | Faster hashing |
-| liburing | `--io-uring` piece reader | Cold-cache I/O overlap (Linux) |
+| Dependency                      | Purpose                                     | Benefit                                      |
+| ------------------------------- | ------------------------------------------- | -------------------------------------------- |
+| OpenSSL                         | SHA-1 implementation                        | Faster hashing                               |
+| liburing                        | `--io-uring` piece reader                   | Cold-cache I/O overlap (Linux)               |
 | isa-l_crypto (`libisal_crypto`) | Optional piece SHA-1 via Intel ISA-L Crypto | Higher CPU-bound hash throughput when linked |
 
 > Note: Distro packages named `libisal` / `libisal-dev` are the **storage** library, not Crypto. Build [isa-l_crypto](https://github.com/intel/isa-l_crypto) from source (needs `nasm`) and point `PKG_CONFIG_PATH` at its `libisal_crypto.pc` when no distro package exists.
@@ -113,8 +113,8 @@ sudo cmake --install build
    - From [releases page](https://github.com/tomcdj71/mktorrent/releases), or
    - Using wget:
      ```bash
-     # Pick VERSION from the releases page (example: 1.7.0)
-     VERSION="1.7.0"
+     # Pick VERSION from the releases page (example: 1.5.0)
+     VERSION="1.5.0"
      OPENSSL="ON"
      PTHREADS="ON"
      wget "https://github.com/tomcdj71/mktorrent/releases/download/v${VERSION}/mktorrent_${VERSION}_openssl-${OPENSSL}_pthreads-${PTHREADS}-ubuntu-latest_amd64.deb"
@@ -129,18 +129,18 @@ sudo cmake --install build
 
 ### CMake Build Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `MKTORRENT_OPENSSL` | Use OpenSSL's SHA-1 implementation | ON |
-| `MKTORRENT_PTHREADS` | Enable POSIX threads for faster hashing | ON |
-| `MKTORRENT_LONG_OPTIONS` | Enable GNU-style long options | ON |
-| `MKTORRENT_IO_URING` | Opt-in `--io-uring` reader (needs liburing + pthreads). If unset, auto-ON on Linux when liburing is found | OFF (auto when unset) |
-| `MKTORRENT_ISAL` | Optional ISA-L Crypto SHA-1 for piece workers (needs `libisal_crypto` + pthreads). If unset, auto-ON on Linux when found | OFF (auto when unset) |
-| `MKTORRENT_NO_HASH_CHECK` | Disable hash-size consistency check | OFF |
-| `MKTORRENT_USE_GITREV_VERSION` | Include git commit in version string | OFF |
-| `MKTORRENT_TEST` | Enable test suite | OFF |
-| `MKTORRENT_TEST_PERFORMANCE` | Enable performance tests | OFF |
-| `CMAKE_BUILD_TYPE` | Build type (Debug/Release/RelWithDebInfo) | — |
+| Option                         | Description                                                                                                              | Default               |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| `MKTORRENT_OPENSSL`            | Use OpenSSL's SHA-1 implementation                                                                                       | ON                    |
+| `MKTORRENT_PTHREADS`           | Enable POSIX threads for faster hashing                                                                                  | ON                    |
+| `MKTORRENT_LONG_OPTIONS`       | Enable GNU-style long options                                                                                            | ON                    |
+| `MKTORRENT_IO_URING`           | Opt-in `--io-uring` reader (needs liburing + pthreads). If unset, auto-ON on Linux when liburing is found                | OFF (auto when unset) |
+| `MKTORRENT_ISAL`               | Optional ISA-L Crypto SHA-1 for piece workers (needs `libisal_crypto` + pthreads). If unset, auto-ON on Linux when found | OFF (auto when unset) |
+| `MKTORRENT_NO_HASH_CHECK`      | Disable hash-size consistency check                                                                                      | OFF                   |
+| `MKTORRENT_USE_GITREV_VERSION` | Include git commit in version string                                                                                     | OFF                   |
+| `MKTORRENT_TEST`               | Enable test suite                                                                                                        | OFF                   |
+| `MKTORRENT_TEST_PERFORMANCE`   | Enable performance tests                                                                                                 | OFF                   |
+| `CMAKE_BUILD_TYPE`             | Build type (Debug/Release/RelWithDebInfo)                                                                                | —                     |
 
 ### Example Configurations
 

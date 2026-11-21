@@ -25,6 +25,84 @@ A simple command-line utility to create BitTorrent metainfo files.
    mktorrent -a http://tracker.example.com/announce -o output.torrent input_file
    ```
 
+## Performance
+
+Warm **2 GiB**, `-l 20` (1 MiB pieces), one 8-core laptop, page cache hot. Median of 5 runs, **MiB/s** (higher is better).
+
+Each chart compares [pobrn/mktorrent](https://github.com/pobrn/mktorrent) **1.1** (same `USE_OPENSSL` / `USE_PTHREADS` flags) to this fork’s **v1.4.0** and **v1.6.0** `.deb`s for that config. Builds without pthreads have no `-t` (single-threaded only).
+
+### `openssl-OFF` `pthreads-OFF`
+
+| | MiB/s |
+|--|------:|
+| pobrn 1.1 | 461 |
+| v1.4.0 | 438 |
+| v1.6.0 | 479 |
+
+```mermaid
+xychart-beta
+    title "openssl-OFF pthreads-OFF (MiB/s)"
+    x-axis ["pobrn 1.1", "v1.4.0", "v1.6.0"]
+    y-axis "MiB/s" 0 --> 500
+    bar [461, 438, 479]
+```
+
+### `openssl-ON` `pthreads-ON`
+
+| | `-t 1` | `-t 8` |
+|--|-------:|-------:|
+| pobrn 1.1 | 1328 | 1259 |
+| v1.4.0 | 1074 | 1064 |
+| v1.6.0 | 1330 | 2062 |
+
+```mermaid
+xychart-beta
+    title "openssl-ON pthreads-ON (MiB/s)"
+    x-axis ["pobrn 1.1", "v1.4.0", "v1.6.0"]
+    y-axis "MiB/s" 0 --> 2100
+    bar [1328, 1074, 1330]
+    bar [1259, 1064, 2062]
+```
+
+First series: `-t 1`. Second: `-t 8`.
+
+### `openssl-OFF` `pthreads-ON`
+
+| | `-t 1` | `-t 8` |
+|--|-------:|-------:|
+| pobrn 1.1 | 455 | 744 |
+| v1.4.0 | 421 | 776 |
+| v1.6.0 | 479 | 1230 |
+
+```mermaid
+xychart-beta
+    title "openssl-OFF pthreads-ON (MiB/s)"
+    x-axis ["pobrn 1.1", "v1.4.0", "v1.6.0"]
+    y-axis "MiB/s" 0 --> 1300
+    bar [455, 421, 479]
+    bar [744, 776, 1230]
+```
+
+First series: `-t 1`. Second: `-t 8`.
+
+### `openssl-ON` `pthreads-OFF`
+
+| | MiB/s |
+|--|------:|
+| pobrn 1.1 | 1145 |
+| v1.4.0 | 1140 |
+| v1.6.0 | 933 |
+
+```mermaid
+xychart-beta
+    title "openssl-ON pthreads-OFF (MiB/s)"
+    x-axis ["pobrn 1.1", "v1.4.0", "v1.6.0"]
+    y-axis "MiB/s" 0 --> 1200
+    bar [1145, 1140, 933]
+```
+
+More on hashing paths: [Hashing and I/O](docs/Hashing-IO.md).
+
 ## Documentation
 
 See [docs/Home.md](docs/Home.md):
