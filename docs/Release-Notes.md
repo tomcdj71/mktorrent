@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v1.6.0] - 2026-11-21
+
+### Added
+- extend create CLI, hashing backends, and I/O paths
+
+### Changed
+- add README performance charts and align guides
+- clear Release-Notes for v1.6.0 re-release
+- sync man and doc versions from CMakeLists
+- tighten hashing throughput notes
+- ignore local CMake and bench worktrees
+- modernize workflows and add conventional-commit release helper
+- refresh CLI, hashing, security, and packaging guides
+- cover CLI, hashing backends, io_uring, and bench harness
 
 ## [v1.4.2] - 2025-04-09
 ### Fixed
